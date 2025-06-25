@@ -1,0 +1,157 @@
+– виведення основних полів та розрахунок основних метрик по account
+WITH account_info AS (
+  SELECT
+    s.date,
+    sp.country,
+    ac.send_interval,
+    ac.is_verified,
+    ac.is_unsubscribed,
+    COUNT(DISTINCT ac.id) AS account_cnt
+  FROM `data-analytics-mate.DA.account` ac
+  JOIN `data-analytics-mate.DA.account_session` acs
+  ON ac.id = acs.account_id
+  JOIN `data-analytics-mate.DA.session` s
+  ON acs.ga_session_id = s.ga_session_id
+  JOIN `data-analytics-mate.DA.session_params` sp
+  ON acs.ga_session_id = sp.ga_session_id
+  GROUP BY s.date, sp.country, ac.send_interval, ac.is_verified, ac.is_unsubscribed
+),
+
+
+– підрахунок total account по країнах
+country_account_totals AS (
+  SELECT
+    sp.country,
+    COUNT(DISTINCT ac.id) AS total_country_account_cnt
+  FROM `data-analytics-mate.DA.account` ac
+  JOIN `data-analytics-mate.DA.account_session` acs
+  ON ac.id = acs.account_id
+  JOIN `data-analytics-mate.DA.session_params` sp
+  ON acs.ga_session_id = sp.ga_session_id
+  GROUP BY sp.country
+),
+
+
+– виведення основних полів та розрахунок основних метрик по email
+email_info AS (
+  SELECT
+    DATE_ADD (s.date, INTERVAL sent_date DAY) AS date,
+    sp.country,
+    ac.send_interval,
+    ac.is_verified,
+    ac.is_unsubscribed,
+    COUNT(DISTINCT es.id_message) AS sent_msg,
+    COUNT(DISTINCT eo.id_message) AS open_msg,
+    COUNT(DISTINCT ev.id_message) AS visit_msg
+  FROM `data-analytics-mate.DA.account` ac
+  JOIN `data-analytics-mate.DA.email_sent` es
+  ON ac.id = es.id_account
+  LEFT JOIN `data-analytics-mate.DA.email_open` eo
+  ON es.id_message = eo.id_message
+  LEFT JOIN `data-analytics-mate.DA.email_visit` ev
+  ON es.id_message = ev.id_message
+  JOIN `data-analytics-mate.DA.account_session` acs
+  ON ac.id = acs.account_id
+  JOIN `data-analytics-mate.DA.session` s
+  ON acs.ga_session_id = s.ga_session_id
+  JOIN `data-analytics-mate.DA.session_params` sp
+  ON acs.ga_session_id = sp.ga_session_id
+  GROUP BY DATE_ADD (s.date, INTERVAL sent_date DAY), sp.country, ac.send_interval, ac.is_verified, ac.is_unsubscribed
+),
+
+
+– підрахунок total sent_msg по країнах
+country_email_totals AS (
+  SELECT
+    sp.country,
+    COUNT(DISTINCT es.id_message) AS total_country_sent_msg
+  FROM `data-analytics-mate.DA.email_sent` es
+  JOIN `data-analytics-mate.DA.account` ac
+  ON ac.id = es.id_account
+  JOIN `data-analytics-mate.DA.account_session` acs
+  ON ac.id = acs.account_id
+  JOIN `data-analytics-mate.DA.session_params` sp
+  ON acs.ga_session_id = sp.ga_session_id
+  GROUP BY sp.country
+),
+
+
+– об'єднання основних полів та основних метрик по account та email
+union_data AS (
+  SELECT
+    ai.date,
+    ai.country,
+    ai.send_interval,
+    ai.is_verified,
+    ai.is_unsubscribed,
+    ai.account_cnt,
+    0 AS sent_msg,
+    0 AS open_msg,
+    0 AS visit_msg
+  FROM account_info ai
+
+
+  UNION ALL
+
+
+  SELECT
+    ei.date,
+    ei.country,
+    ei.send_interval,
+    ei.is_verified,
+    ei.is_unsubscribed,
+    0 AS account_cnt,
+    ei.sent_msg,
+    ei.open_msg,
+    ei.visit_msg
+  FROM email_info ei
+),
+
+
+– сумування та групування основних метрик
+aggregated_data AS (
+  SELECT
+    ud.date,
+    ud.country,
+    ud.send_interval,
+    ud.is_verified,
+    ud.is_unsubscribed,
+    SUM(ud.account_cnt) AS account_cnt,
+    SUM(ud.sent_msg) AS sent_msg,
+    SUM(ud.open_msg) AS open_msg,
+    SUM(ud.visit_msg) AS visit_msg
+  FROM union_data ud
+  GROUP BY ud.date, ud.country, ud.send_interval, ud.is_verified, ud.is_unsubscribed
+),
+
+
+ – присвоєння рейтингу країнам за кількістю створених підписників та за кількістю відправлених листів;
+ranked_data AS (
+  SELECT
+    ad.date,
+    ad.country,
+    ad.send_interval,
+    ad.is_verified,
+    ad.is_unsubscribed,
+    ad.account_cnt,
+    ad.sent_msg,
+    ad.open_msg,
+    ad.visit_msg,
+    cat.total_country_account_cnt,
+    DENSE_RANK() OVER (ORDER BY cat.total_country_account_cnt DESC) AS rank_total_country_account_cnt,
+    cet.total_country_sent_msg,
+    DENSE_RANK() OVER (ORDER BY cet.total_country_sent_msg DESC) AS rank_total_country_sent_msg
+  FROM aggregated_data ad
+  LEFT JOIN country_account_totals cat
+  ON ad.country = cat.country
+  LEFT JOIN country_email_totals cet
+  ON ad.country = cet.country
+)
+
+
+– фільтрування по rank_total_country
+SELECT *
+FROM ranked_data
+WHERE rank_total_country_account_cnt <= 10
+   OR rank_total_country_sent_msg <= 10
+ORDER BY rank_total_country_account_cnt, rank_total_country_sent_msg

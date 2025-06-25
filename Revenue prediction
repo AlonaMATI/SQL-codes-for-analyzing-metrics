@@ -1,0 +1,37 @@
+with revenue_and_predict as (SELECT
+date,
+SUM (price) AS revenue,
+0 AS predict  
+FROM `data-analytics-mate.DA.order` O
+JOIN `data-analytics-mate.DA.product` P
+ON O.item_id = P.item_id
+JOIN `data-analytics-mate.DA.session` S
+ON O.ga_session_id = S.ga_session_id
+GROUP BY date
+
+UNION ALL
+SELECT
+date,
+0 AS revenue,  
+SUM (predict) AS predict
+FROM `data-analytics-mate.DA.revenue_predict`
+GROUP BY date),
+
+
+union_date as (
+SELECT
+date,
+SUM(revenue) as revenue,
+SUM (predict) AS predict
+From revenue_and_predict
+GROUP BY date)
+
+SELECT
+date,
+revenue,
+SUM(revenue) OVER (ORDER BY date) as revenue_acc,
+predict,
+SUM(predict) OVER (ORDER BY date) as predict_acc,
+SUM(revenue) OVER(ORDER BY date) / SUM(predict) OVER (ORDER BY date) *100 AS REVENUE_RATE
+FROM
+union_date

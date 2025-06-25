@@ -1,0 +1,41 @@
+WITH REV_USD AS (
+SELECT
+SP.continent,
+SUM (P.price) AS revenue,
+SUM (CASE WHEN device = 'mobile' THEN P.price END) AS revenue_from_mobile,
+SUM (CASE WHEN device = 'desktop' THEN P.price END) AS revenue_from_desktop,
+
+ FROM `data-analytics-mate.DA.order` O
+ JOIN `data-analytics-mate.DA.product` P
+ ON O.item_id = P.item_id
+ JOIN `data-analytics-mate.DA.session_params` SP
+ ON O.ga_session_id = SP.ga_session_id
+ Group BY SP.continent
+ ),
+ACCOUNT_CNT AS (
+SELECT
+SP.continent,
+COUNT (ACS.account_id) AS account_cnt,
+COUNT (SP.ga_session_id) AS session_cnt,
+COUNT (DISTINCT CASE WHEN is_verified = 1 THEN ACC.id END) AS verified_acc
+FROM
+ `data-analytics-mate.DA.session_params` SP
+ LEFT JOIN `data-analytics-mate.DA.account_session` ACS
+ ON SP.ga_session_id = ACS.ga_session_id
+ LEFT JOIN `data-analytics-mate.DA.account` ACC
+ ON ACS.account_id = ACC.id
+ GROUP BY SP.continent
+)
+
+SELECT
+ACCOUNT_CNT.continent,
+REV_USD.revenue,
+REV_USD.revenue_from_mobile,
+REV_USD.revenue_from_desktop,
+revenue / SUM (revenue) OVER () * 100 AS Rate_rev_from_total,
+ACCOUNT_CNT.account_cnt,
+ACCOUNT_CNT.session_cnt,
+ACCOUNT_CNT.verified_acc
+FROM ACCOUNT_CNT
+LEFT JOIN REV_USD
+ON ACCOUNT_CNT.continent = REV_USD.continent

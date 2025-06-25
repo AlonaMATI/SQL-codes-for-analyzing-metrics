@@ -1,0 +1,26 @@
+SELECT
+YEAR, MONTH,
+SUM (revenue) AS REVENUE,
+SUM (cost) AS COST
+FROM (
+SELECT
+EXTRACT (YEAR FROM S.date) AS year,
+EXTRACT (MONTH FROM S.date) AS month,
+SUM (P.price) AS revenue, NULL AS cost
+FROM `data-analytics-mate.DA.order` O
+JOIN `data-analytics-mate.DA.product` P
+ON O.item_id = P.item_id
+JOIN `data-analytics-mate.DA.session` S
+ON O.ga_session_id = S.ga_session_id
+JOIN `data-analytics-mate.DA.session_params` SP
+ON O.ga_session_id = SP.ga_session_id
+GROUP BY year, month
+UNION ALL
+SELECT
+EXTRACT (YEAR FROM SC.date) AS year,
+EXTRACT (MONTH FROM SC.date) AS month,
+NULL AS revenue,
+SUM (COST) AS cost
+FROM `data-analytics-mate.DA.paid_search_cost` SC
+GROUP BY year, month )
+GROUP BY YEAR, MONTH
